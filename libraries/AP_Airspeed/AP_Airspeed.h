@@ -18,6 +18,7 @@ class AP_Airspeed_Backend;
 
 class AP_Airspeed_Params {
 public:
+
     // Constructor
     AP_Airspeed_Params(void);
 
@@ -51,6 +52,11 @@ public:
 #if AP_AIRSPEED_AUTOCAL_ENABLE
     AP_Int8  autocal;
 #endif
+
+    // G2S custom raw CAN driver params
+    AP_Int8  g2s_enable;
+    AP_Float g2s_offset;
+    AP_Int8  g2s_failsafe;
 
     static const struct AP_Param::GroupInfo var_info[];
 };
@@ -89,6 +95,11 @@ public:
 
     void init(void);
     void allocate();
+
+    // --- G2S custom params accessors (per instance) ---
+    int8_t g2s_enabled(uint8_t i) const { return param[i].g2s_enable.get(); }
+    float  g2s_offset(uint8_t i) const { return param[i].g2s_offset.get(); }
+    int8_t g2s_failsafe(uint8_t i) const { return param[i].g2s_failsafe.get(); }
 
 
     // indicate which bit in LOG_BITMASK indicates we should log airspeed readings

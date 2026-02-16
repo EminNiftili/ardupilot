@@ -39,6 +39,29 @@
 // table of user settable parameters
 const AP_Param::GroupInfo AP_Airspeed_Params::var_info[] = {
 
+    // @Param: G2S_ENABLE
+    // @DisplayName: G2S enable
+    // @Description: Enable G2S raw CAN airspeed sensor (0=Disabled, 1=Enabled)
+    // @Values: 0:Disabled, 1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("G2S_ENABLE", 90, AP_Airspeed_Params, g2s_enable, 0),
+
+    // @Param: G2S_OFFSET
+    // @DisplayName: G2S offset (m/s)
+    // @Description: Offset added to the measured airspeed (m/s)
+    // @Range: -50 50
+    // @Units: m/s
+    // @User: Standard
+    AP_GROUPINFO("G2S_OFFSET", 91, AP_Airspeed_Params, g2s_offset, 0.0f),
+
+    // @Param: G2S_FAILSAFE
+    // @DisplayName: G2S failsafe
+    // @Description: Trigger failsafe behavior when G2S data times out (0=Disabled, 1=Enabled)
+    // @Values: 0:Disabled, 1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("G2S_FAILSAFE", 92, AP_Airspeed_Params, g2s_failsafe, 0),
+
+
     // @Param: TYPE
     // @DisplayName: Airspeed type
     // @Description: Type of airspeed sensor
