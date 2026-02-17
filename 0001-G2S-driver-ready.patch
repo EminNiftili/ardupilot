@@ -1,0 +1,287 @@
+From 19a4ad2d652c0ba05b14fdb3a04969bea9978b21 Mon Sep 17 00:00:00 2001
+From: Emin Niftili <eminiftiyev23@gmail.com>
+Date: Tue, 17 Feb 2026 02:50:17 +0400
+Subject: [PATCH] G2S driver ready
+
+---
+ libraries/AP_Airspeed/AP_Airspeed.h          |  11 ++
+ libraries/AP_Airspeed/AP_Airspeed_G2S.cpp    | 136 +++++++++++++++++++
+ libraries/AP_Airspeed/AP_Airspeed_G2S.h      |  52 +++++++
+ libraries/AP_Airspeed/AP_Airspeed_Params.cpp |  23 ++++
+ 4 files changed, 222 insertions(+)
+ create mode 100644 libraries/AP_Airspeed/AP_Airspeed_G2S.cpp
+ create mode 100644 libraries/AP_Airspeed/AP_Airspeed_G2S.h
+
+diff --git a/libraries/AP_Airspeed/AP_Airspeed.h b/libraries/AP_Airspeed/AP_Airspeed.h
+index 22e3188807..be1c127229 100644
+--- a/libraries/AP_Airspeed/AP_Airspeed.h
++++ b/libraries/AP_Airspeed/AP_Airspeed.h
+@@ -18,6 +18,7 @@ class AP_Airspeed_Backend;
+ 
+ class AP_Airspeed_Params {
+ public:
++
+     // Constructor
+     AP_Airspeed_Params(void);
+ 
+@@ -52,6 +53,11 @@ public:
+     AP_Int8  autocal;
+ #endif
+ 
++    // G2S custom raw CAN driver params
++    AP_Int8  g2s_enable;
++    AP_Float g2s_offset;
++    AP_Int8  g2s_failsafe;
++
+     static const struct AP_Param::GroupInfo var_info[];
+ };
+ 
+@@ -90,6 +96,11 @@ public:
+     void init(void);
+     void allocate();
+ 
++    // --- G2S custom params accessors (per instance) ---
++    int8_t g2s_enabled(uint8_t i) const { return param[i].g2s_enable.get(); }
++    float  g2s_offset(uint8_t i) const { return param[i].g2s_offset.get(); }
++    int8_t g2s_failsafe(uint8_t i) const { return param[i].g2s_failsafe.get(); }
++
+ 
+     // indicate which bit in LOG_BITMASK indicates we should log airspeed readings
+     void set_log_bit(uint32_t log_bit) { _log_bit = log_bit; }
+diff --git a/libraries/AP_Airspeed/AP_Airspeed_G2S.cpp b/libraries/AP_Airspeed/AP_Airspeed_G2S.cpp
+new file mode 100644
+index 0000000000..a4e58cdcba
+--- /dev/null
++++ b/libraries/AP_Airspeed/AP_Airspeed_G2S.cpp
+@@ -0,0 +1,136 @@
++#include "AP_Airspeed_G2S.h"
++#include "AP_Airspeed.h"
++#include <GCS_MAVLink/GCS.h>
++
++
++AP_Airspeed_G2S::AP_Airspeed_G2S(AP_Airspeed &ap, uint8_t inst)
++    : AP_Airspeed_Backend(ap, inst)
++    , _ap(ap)
++    , _inst(inst)
++{
++    _last_airspeed_ms = 0.0f;
++    _last_temp_c = 0.0f;
++    _healthy = false;
++
++    
++    _multican = NEW_NOTHROW MultiCAN{
++        FUNCTOR_BIND_MEMBER(&AP_Airspeed_G2S::handle_frame, bool, AP_HAL::CANFrame &),
++        AP_CAN::Protocol::Scripting2,
++        "G2S Airspeed"
++    };
++    if (_multican == nullptr) {
++        AP_HAL::panic("Failed to create G2S MultiCAN");
++    }
++}
++
++bool AP_Airspeed_G2S::init(void)
++{
++    if (enabled() == 0) {
++        _healthy = false;
++        return false;
++    }
++
++    _healthy = false;
++    return true;
++}
++
++bool AP_Airspeed_G2S::get_temperature(float &temperature)
++{
++    update_health();
++    if (_failsafe_active) {
++        return false;
++    }
++    if (!_healthy) {
++        return false;
++    }
++
++    temperature = _last_temp_c;
++    return true;
++}
++
++
++bool AP_Airspeed_G2S::get_airspeed(float &airspeed)
++{
++    update_health();
++    if (_failsafe_active) {
++        return false;
++    }
++    if (!_healthy) {
++        return false;
++    }
++
++    const uint32_t now = AP_HAL::millis();
++
++    if (now - _last_publish_ms < 20) {
++        airspeed = _last_published_airspeed_mps;
++        return true;
++    }
++
++    _last_publish_ms = now;
++
++    _last_published_airspeed_mps = _last_airspeed_ms + offset();
++    airspeed = _last_published_airspeed_mps;
++
++    return true;
++}
++
++
++bool AP_Airspeed_G2S::handle_frame(AP_HAL::CANFrame &frame)
++{
++    const uint16_t id = frame.id;
++
++    if (_recv_accept_id != 0 && id != _recv_accept_id) {
++        return false;
++    }
++    
++    const uint8_t len = AP_HAL::CANFrame::dlcToDataLength(frame.dlc);
++    if (len < 4) {
++        return false;
++    }
++
++    float airspeed_ms = 0.0f;
++    static_assert(sizeof(float) == 4, "float must be 4 bytes");
++    memcpy(&airspeed_ms, frame.data, 4);
++
++    if (!isfinite(airspeed_ms) || airspeed_ms < -10.0f || airspeed_ms > 200.0f) {
++        return false;
++    }
++
++    _last_airspeed_ms = airspeed_ms;
++    _last_update_ms = AP_HAL::millis();
++    _healthy = true;
++
++    return true;
++}
++
++void AP_Airspeed_G2S::update_health()
++{
++    const uint32_t now = AP_HAL::millis();
++
++    if (enabled() == 0) {
++        _healthy = false;
++        _failsafe_active = false;
++        return;
++    }
++
++    if (_last_update_ms == 0) {
++        _healthy = false;
++    } else if (now - _last_update_ms > DATA_TIMEOUT_MS) {
++        _healthy = false;
++    } else {
++        _healthy = true;
++    }
++
++    if (!_healthy && failsafe_en() != 0) {
++        _failsafe_active = true;
++
++        if (now - _last_failsafe_msg_ms > 5000) {
++            _last_failsafe_msg_ms = now;
++            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "G2S Airspeed FAILSAFE: no CAN data");
++        }
++    } else {
++        _failsafe_active = false;
++    }
++}
++
++
+diff --git a/libraries/AP_Airspeed/AP_Airspeed_G2S.h b/libraries/AP_Airspeed/AP_Airspeed_G2S.h
+new file mode 100644
+index 0000000000..f6ecf5b514
+--- /dev/null
++++ b/libraries/AP_Airspeed/AP_Airspeed_G2S.h
+@@ -0,0 +1,52 @@
++#pragma once
++
++#include "AP_Airspeed_Backend.h"
++#include <AP_Param/AP_Param.h>
++#include <AP_CANManager/AP_CANSensor.h>
++#include <AP_HAL/AP_HAL.h>
++
++
++class AP_Airspeed_G2S : public AP_Airspeed_Backend {
++public:
++    AP_Airspeed_G2S(AP_Airspeed &ap, uint8_t inst);
++
++    bool init(void) override;
++
++    bool get_temperature(float &temperature) override;
++
++    bool has_airspeed() override { return true; }
++
++    bool get_airspeed(float &airspeed) override;
++
++    int8_t enabled() const { return _ap.g2s_enabled(_inst); }
++    float offset() const { return _ap.g2s_offset(_inst); }
++    int8_t failsafe_en() const { return _ap.g2s_failsafe(_inst); }
++
++
++
++private:
++    MultiCAN *_multican = nullptr;
++
++    uint32_t _last_update_ms = 0;
++
++    uint16_t _recv_accept_id = 0; // 0 => for every İD
++
++    bool handle_frame(AP_HAL::CANFrame &frame);
++
++    AP_Airspeed &_ap;
++    const uint8_t _inst;
++
++    float _last_airspeed_ms = 0.0f;
++    float _last_temp_c = 0.0f;
++    bool  _healthy = false;
++
++    uint32_t _last_publish_ms = 0;
++    float    _last_published_airspeed_mps = 0.0f;
++
++    static constexpr uint32_t DATA_TIMEOUT_MS = 200; // 0.2s = 50Hz
++
++    void update_health();
++
++    bool _failsafe_active = false;
++    uint32_t _last_failsafe_msg_ms = 0;
++};
+diff --git a/libraries/AP_Airspeed/AP_Airspeed_Params.cpp b/libraries/AP_Airspeed/AP_Airspeed_Params.cpp
+index 4298f52286..ccf700d7ff 100644
+--- a/libraries/AP_Airspeed/AP_Airspeed_Params.cpp
++++ b/libraries/AP_Airspeed/AP_Airspeed_Params.cpp
+@@ -39,6 +39,29 @@
+ // table of user settable parameters
+ const AP_Param::GroupInfo AP_Airspeed_Params::var_info[] = {
+ 
++    // @Param: G2S_ENABLE
++    // @DisplayName: G2S enable
++    // @Description: Enable G2S raw CAN airspeed sensor (0=Disabled, 1=Enabled)
++    // @Values: 0:Disabled, 1:Enabled
++    // @User: Standard
++    AP_GROUPINFO("G2S_ENABLE", 90, AP_Airspeed_Params, g2s_enable, 0),
++
++    // @Param: G2S_OFFSET
++    // @DisplayName: G2S offset (m/s)
++    // @Description: Offset added to the measured airspeed (m/s)
++    // @Range: -50 50
++    // @Units: m/s
++    // @User: Standard
++    AP_GROUPINFO("G2S_OFFSET", 91, AP_Airspeed_Params, g2s_offset, 0.0f),
++
++    // @Param: G2S_FAILSAFE
++    // @DisplayName: G2S failsafe
++    // @Description: Trigger failsafe behavior when G2S data times out (0=Disabled, 1=Enabled)
++    // @Values: 0:Disabled, 1:Enabled
++    // @User: Standard
++    AP_GROUPINFO("G2S_FAILSAFE", 92, AP_Airspeed_Params, g2s_failsafe, 0),
++
++
+     // @Param: TYPE
+     // @DisplayName: Airspeed type
+     // @Description: Type of airspeed sensor
+-- 
+2.43.0
+

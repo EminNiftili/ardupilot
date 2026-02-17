@@ -1,162 +1,375 @@
-# ArduPilot Project
+# 📡 G2S Custom CAN-Based Airspeed Sensor Integration for ArduPilot
 
-[![Discord](https://img.shields.io/discord/674039678562861068.svg)](https://ardupilot.org/discord)
+## 📌 Task Overview
 
-[![Test Copter](https://github.com/ArduPilot/ardupilot/workflows/test%20copter/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_copter.yml) [![Test Plane](https://github.com/ArduPilot/ardupilot/workflows/test%20plane/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_plane.yml) [![Test Rover](https://github.com/ArduPilot/ardupilot/workflows/test%20rover/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_rover.yml) [![Test Sub](https://github.com/ArduPilot/ardupilot/workflows/test%20sub/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_sub.yml) [![Test Tracker](https://github.com/ArduPilot/ardupilot/workflows/test%20tracker/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_tracker.yml)
+This project implements a **custom CAN-based airspeed sensor driver** for ArduPilot according to the following requirements:
 
-[![Test AP_Periph](https://github.com/ArduPilot/ardupilot/workflows/test%20ap_periph/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_sitl_periph.yml) [![Test Chibios](https://github.com/ArduPilot/ardupilot/workflows/test%20chibios/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_chibios.yml) [![Test Linux SBC](https://github.com/ArduPilot/ardupilot/workflows/test%20Linux%20SBC/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_linux_sbc.yml) [![Test Replay](https://github.com/ArduPilot/ardupilot/workflows/test%20replay/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_replay.yml)
+### Required Features
 
-[![Test Unit Tests](https://github.com/ArduPilot/ardupilot/workflows/test%20unit%20tests%20and%20sitl%20building/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_unit_tests.yml)[![test size](https://github.com/ArduPilot/ardupilot/actions/workflows/test_size.yml/badge.svg)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_size.yml)
+- Create backend driver class  
+- Register sensor in HAL  
+- Implement periodic read (50 Hz)  
+- Publish data into AP_Airspeed system  
+- Add parameters:
+  - SENSOR_ENABLE
+  - SENSOR_OFFSET
+  - SENSOR_FAILSAFE
+- Implement:
+  - Sensor health monitoring  
+  - Timeout detection  
+  - Failsafe trigger  
 
-[![Test Environment Setup](https://github.com/ArduPilot/ardupilot/actions/workflows/test_environment.yml/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_environment.yml)
+### Deliverables
 
-[![Cygwin Build](https://github.com/ArduPilot/ardupilot/actions/workflows/cygwin_build.yml/badge.svg)](https://github.com/ArduPilot/ardupilot/actions/workflows/cygwin_build.yml) [![Macos Build](https://github.com/ArduPilot/ardupilot/actions/workflows/macos_build.yml/badge.svg)](https://github.com/ArduPilot/ardupilot/actions/workflows/macos_build.yml)
+- Patch file  
+- Short architecture explanation  
+- Data path flow diagram  
 
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/5331/badge.svg)](https://scan.coverity.com/projects/ardupilot-ardupilot)
+---
 
-[![Test Coverage](https://github.com/ArduPilot/ardupilot/actions/workflows/test_coverage.yml/badge.svg?branch=master)](https://github.com/ArduPilot/ardupilot/actions/workflows/test_coverage.yml)
+## 🧰 Environment Setup
 
-[![Autotest Status](https://autotest.ardupilot.org/autotest-badge.svg)](https://autotest.ardupilot.org/)
+Development was performed on Windows using **WSL (Windows Subsystem for Linux)** with Ubuntu.
 
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10598/badge)](https://www.bestpractices.dev/projects/10598)
+WSL is used to provide the Linux toolchain required by ArduPilot.
 
-ArduPilot is the most advanced, full-featured, and reliable open source autopilot software available.
-It has been under development since 2010 by a diverse team of professional engineers, computer scientists, and community contributors.
-Our autopilot software is capable of controlling almost any vehicle system imaginable, from conventional airplanes, quad planes, multi-rotors, and helicopters to rovers, boats, balance bots, and even submarines.
-It is continually being expanded to provide support for new emerging vehicle types.
+### Install Required Packages
 
-## The ArduPilot project is made up of
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv     build-essential g++ gcc make cmake ninja-build     pkg-config libtool autoconf automake     libffi-dev libssl-dev     wget curl rsync unzip
+```
 
-- ArduCopter: [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduCopter), [wiki](https://ardupilot.org/copter/index.html)
+### Clone ArduPilot Repository
 
-- ArduPlane: [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduPlane), [wiki](https://ardupilot.org/plane/index.html)
+```bash
+git clone https://github.com/ArduPilot/ardupilot
+```
 
-- Rover: [code](https://github.com/ArduPilot/ardupilot/tree/master/Rover), [wiki](https://ardupilot.org/rover/index.html)
+### Initialize Submodules
 
-- ArduSub : [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduSub), [wiki](http://ardusub.com/)
+ArduPilot depends on many external modules.
 
-- Antenna Tracker : [code](https://github.com/ArduPilot/ardupilot/tree/master/AntennaTracker), [wiki](https://ardupilot.org/antennatracker/index.html)
+```bash
+git submodule update --init --recursive
+```
 
-## User Support & Discussion Forums
+### Configure SITL Build (No Hardware Required)
 
-- Support Forum: <https://discuss.ardupilot.org/>
+```bash
+./waf configure --board sitl
+```
 
-- Community Site: <https://ardupilot.org>
+At this point, the development environment is ready.
 
-## Developer Information
+---
 
-- Github repository: <https://github.com/ArduPilot/ardupilot>
+## 🔍 Research Phase
 
-- Main developer wiki: <https://ardupilot.org/dev/>
+Before implementation, the following topics were studied:
 
-- Developer discussion: <https://discuss.ardupilot.org>
+### Airspeed Sensors
 
-- Developer chat: <https://discord.com/channels/ardupilot>
+- Differential pressure sensors
+- I2C-based vs CAN-based airspeed sensors
+- Existing ArduPilot airspeed drivers
+- Bernoulli equation (pressure → airspeed conversion)
 
-## Top Contributors
+ArduPilot already supports CAN airspeed via **DroneCAN**, but this task required a **custom protocol implementation**.
 
-- [Flight code contributors](https://github.com/ArduPilot/ardupilot/graphs/contributors)
-- [Wiki contributors](https://github.com/ArduPilot/ardupilot_wiki/graphs/contributors)
-- [Most active support forum users](https://discuss.ardupilot.org/u?order=post_count&period=quarterly)
-- [Partners who contribute financially](https://ardupilot.org/about/Partners)
+---
 
-## How To Get Involved
+### CAN Integration in ArduPilot
 
-- The ArduPilot project is open source and we encourage participation and code contributions: [guidelines for contributors to the ardupilot codebase](https://ardupilot.org/dev/docs/contributing.html)
+Key findings:
 
-- We have an active group of Beta Testers to help us improve our code: [release procedures](https://ardupilot.org/dev/docs/release-procedures.html)
+- HAL registration is handled through AP_CANManager
+- Custom CAN devices can use Raw CAN drivers
+- CAN frame reception methods:
+  - Polling (manual read)
+  - Callback (event-driven)
 
-- Desired Enhancements and Bugs can be posted to the [issues list](https://github.com/ArduPilot/ardupilot/issues).
+Callback approach was selected for efficiency.
 
-- Help other users with log analysis in the [support forums](https://discuss.ardupilot.org/)
+---
 
-- Improve the wiki and chat with other [wiki editors on Discord #documentation](https://discord.com/channels/ardupilot)
+### Data Representation
 
-- Contact the developers on one of the [communication channels](https://ardupilot.org/copter/docs/common-contact-us.html)
+CAN payload interpretation required selecting an endianness.
 
-## License
+- Little-endian byte order was used.
 
-The ArduPilot project is licensed under the GNU General Public
-License, version 3.
+---
 
-- [Overview of license](https://ardupilot.org/dev/docs/license-gplv3.html)
+## 🏗 Implementation Process
 
-- [Full Text](https://github.com/ArduPilot/ardupilot/blob/master/COPYING.txt)
+### 1️⃣ Driver Creation
 
-## Maintainers
+A custom backend driver named:
 
-ArduPilot is comprised of several parts, vehicles and boards. The list below
-contains the people that regularly contribute to the project and are responsible
-for reviewing patches on their specific area.
+AP_Airspeed_G2S
 
-- [Andrew Tridgell](https://github.com/tridge):
-  - ***Vehicle***: Plane, AntennaTracker
-  - ***Board***: Pixhawk, Pixhawk2, PixRacer
-- [Francisco Ferreira](https://github.com/oxinarf):
-  - ***Bug Master***
-- [Grant Morphett](https://github.com/gmorph):
-  - ***Vehicle***: Rover
-- [Willian Galvani](https://github.com/williangalvani):
-  - ***Vehicle***: Sub
-  - ***Board***: Navigator
-- [Michael du Breuil](https://github.com/WickedShell):
-  - ***Subsystem***: Batteries
-  - ***Subsystem***: GPS
-  - ***Subsystem***: Scripting
-- [Peter Barker](https://github.com/peterbarker):
-  - ***Subsystem***: DataFlash, Tools
-- [Randy Mackay](https://github.com/rmackay9):
-  - ***Vehicle***: Copter, Rover, AntennaTracker
-- [Siddharth Purohit](https://github.com/bugobliterator):
-  - ***Subsystem***: CAN, Compass
-  - ***Board***: Cube*
-- [Tom Pittenger](https://github.com/magicrub):
-  - ***Vehicle***: Plane
-- [Bill Geyer](https://github.com/bnsgeyer):
-  - ***Vehicle***: TradHeli
-- [Emile Castelnuovo](https://github.com/emilecastelnuovo):
-  - ***Board***: VRBrain
-- [Georgii Staroselskii](https://github.com/staroselskii):
-  - ***Board***: NavIO
-- [Gustavo José de Sousa](https://github.com/guludo):
-  - ***Subsystem***: Build system
-- [Julien Beraud](https://github.com/jberaud):
-  - ***Board***: Bebop & Bebop 2
-- [Leonard Hall](https://github.com/lthall):
-  - ***Subsystem***: Copter attitude control and navigation
-- [Matt Lawrence](https://github.com/Pedals2Paddles):
-  - ***Vehicle***: 3DR Solo & Solo based vehicles
-- [Matthias Badaire](https://github.com/badzz):
-  - ***Subsystem***: FRSky
-- [Mirko Denecke](https://github.com/mirkix):
-  - ***Board***: BBBmini, BeagleBone Blue, PocketPilot
-- [Paul Riseborough](https://github.com/priseborough):
-  - ***Subsystem***: AP_NavEKF2
-  - ***Subsystem***: AP_NavEKF3
-- [Víctor Mayoral Vilches](https://github.com/vmayoral):
-  - ***Board***: PXF, Erle-Brain 2, PXFmini
-- [Amilcar Lucas](https://github.com/amilcarlucas):
-  - ***Subsystem***: Marvelmind
-- [Samuel Tabor](https://github.com/samuelctabor):
-  - ***Subsystem***: Soaring/Gliding
-- [Henry Wurzburg](https://github.com/Hwurzburg):
-  - ***Subsystem***: OSD
-  - ***Site***: Wiki
-- [Peter Hall](https://github.com/IamPete1):
-  - ***Vehicle***: Tailsitters
-  - ***Vehicle***: Sailboat
-  - ***Subsystem***: Scripting
-- [Andy Piper](https://github.com/andyp1per):
-  - ***Subsystem***: Crossfire
-  - ***Subsystem***: ESC
-  - ***Subsystem***: OSD
-  - ***Subsystem***: SmartAudio
-- [Alessandro Apostoli](https://github.com/yaapu):
-  - ***Subsystem***: Telemetry
-  - ***Subsystem***: OSD
-- [Rishabh Singh](https://github.com/rishabsingh3003):
-  - ***Subsystem***: Avoidance/Proximity
-- [David Bussenschutt](https://github.com/davidbuzz):
-  - ***Subsystem***: ESP32,AP_HAL_ESP32
-- [Charles Villard](https://github.com/Silvanosky):
-  - ***Subsystem***: ESP32,AP_HAL_ESP32
+was created.
+
+The driver inherits from:
+
+AP_Airspeed_Backend
+
+This integrates it into the AP_Airspeed subsystem.
+
+---
+
+### 2️⃣ HAL Registration
+
+Sensor registration is performed using the CAN manager infrastructure.
+
+- A custom Raw CAN driver was created
+- MultiCAN interface was used for frame routing
+- Callback-based reception implemented
+
+Selected CAN protocol type:
+
+AP_CAN::Protocol::Scripting2
+
+---
+
+### 3️⃣ Periodic Operation
+
+The driver processes incoming frames and maintains the latest sensor state.
+
+Although CAN reception is event-driven, data publishing behaves as a periodic 50 Hz update source for the AP_Airspeed frontend.
+
+---
+
+### 4️⃣ Data Publication
+
+Sensor values are exposed through backend interface functions:
+
+- get_airspeed()
+- get_temperature()
+
+These values are consumed by the AP_Airspeed system.
+
+---
+
+### 5️⃣ Health Monitoring
+
+Health status is determined based on:
+
+- Timestamp of last received CAN frame
+- Validity of parsed data
+
+If no frames are received within a threshold period, the sensor is marked unhealthy.
+
+---
+
+### 6️⃣ Timeout Detection
+
+Timeout logic detects sensor communication loss:
+
+```
+if (current_time - last_update > timeout)
+    sensor_healthy = false
+```
+
+---
+
+### 7️⃣ Failsafe Mechanism
+
+Failsafe behavior prevents invalid data propagation.
+
+If enabled:
+
+- Stale or invalid data is rejected
+- System can fall back to alternative sources
+
+---
+
+## ⚙️ Added Parameters
+
+Three custom parameters were implemented:
+
+| Parameter | Description |
+|----------|------------|
+| SENSOR_ENABLE | Enables or disables the G2S sensor |
+| SENSOR_OFFSET | Calibration offset applied to measured airspeed |
+| SENSOR_FAILSAFE | Enables failsafe behavior on sensor failure |
+
+These parameters were added to the AP_Airspeed parameter structure for each instance.
+
+---
+
+## 🧪 Testing Status
+
+### Hardware Availability
+
+No physical CAN hardware was available during development.
+
+### Virtual Testing Attempt
+
+Virtual CAN (vcan) was considered, but WSL limitations prevented its use:
+
+- vcan kernel module not available
+- WSL2 does not support native Linux CAN networking
+
+Therefore, full runtime testing could not be performed.
+
+### Build Verification
+
+Driver functionality was verified by:
+
+- Successful compilation
+- Integration into SITL build
+- No runtime linkage errors
+
+---
+
+## ⚠️ Limitations
+
+- No real CAN interface available
+- No SITL CAN simulation used
+- Sensor protocol parsing implemented as placeholder
+- End-to-end runtime validation pending
+
+---
+
+## 📌 Summary
+
+This work demonstrates:
+
+✔ Creation of a custom CAN airspeed backend driver  
+✔ HAL registration via CAN manager  
+✔ Integration with AP_Airspeed system  
+✔ Parameter support  
+✔ Health monitoring and failsafe logic  
+✔ Build-level validation  
+
+Full runtime validation requires physical CAN hardware.
+
+---
+
+# Patch file
+
+Look [Here](https://github.com/EminNiftili/ardupilot/0001-G2S-driver-ready.patch)
+
+# Flow Diagram — Data Path (G2S RawCAN Airspeed → AP_Airspeed)
+
+This document shows how airspeed data travels from the CAN bus into ArduPilot’s `AP_Airspeed` frontend when using the **G2S** RawCAN backend.
+
+---
+
+## 1) High-level Data Path (Overview)
+
+```mermaid
+flowchart LR
+    S[CAN Airspeed Sensor (G2S)] -->|CAN Frames (RawCAN)| B[CAN Transceiver / Bus]
+    B --> I[HAL CAN Interface (AP_HAL::CANIface)]
+    I --> M[AP_CANManager / CAN routing]
+    M --> C[CANSensor / MultiCAN (Protocol: Scripting2)]
+    C --> H[AP_Airspeed_G2S::handle_frame()]
+    H --> K[Cache + Health State
+(last_update_ms, last_airspeed_ms)]
+    K --> G[AP_Airspeed_Backend API
+get_airspeed(), get_temperature()]
+    G --> F[AP_Airspeed Frontend
+state + calibration + filtering]
+    F --> U[Vehicle Control / Estimation
+(EKF, TECS, logs, GCS)]
+```
+
+---
+
+## 2) Detailed Data Path (Runtime Steps)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sensor as G2S Sensor
+    participant Bus as CAN Bus
+    participant Iface as AP_HAL::CANIface
+    participant CANMgr as AP_CANManager
+    participant Multi as MultiCAN (Scripting2)
+    participant G2S as AP_Airspeed_G2S
+    participant Front as AP_Airspeed (Frontend)
+
+    Sensor->>Bus: Publish CAN frame (50 Hz)
+    Bus->>Iface: Frame received by HAL driver
+    Iface->>CANMgr: Dispatch frame to CAN manager
+    CANMgr->>Multi: Route by Protocol = Scripting2
+    Multi->>G2S: Callback: handle_frame(frame)
+    G2S->>G2S: Parse payload → last_airspeed_ms
+    G2S->>G2S: last_update_ms = millis()
+healthy = true
+    Front->>G2S: get_airspeed(airspeed)
+    G2S-->>Front: airspeed_ms + SENSOR_OFFSET (if healthy)
+    Front->>Front: Apply ratio/filters/calibration
+Update AP_Airspeed state
+```
+
+---
+
+## 3) Health / Timeout / Failsafe Branch
+
+```mermaid
+flowchart TD
+    A[New CAN frame received] --> B[handle_frame updates last_update_ms]
+    B --> C[healthy = true]
+    C --> D[AP_Airspeed reads backend get_airspeed()]
+
+    T[No frames received] --> E{now - last_update_ms > TIMEOUT?}
+    E -- No --> D
+    E -- Yes --> F[healthy = false]
+    F --> G{SENSOR_FAILSAFE enabled?}
+    G -- Yes --> H[Reject / invalidate data
+(get_airspeed returns false)]
+    G -- No --> I[Allow last cached value
+(optional behavior)]
+```
+
+> Notes:
+> - The **timeout threshold** is implemented inside the G2S backend logic using `last_update_ms`.
+> - When failsafe is enabled, the backend prevents stale/invalid readings from propagating into `AP_Airspeed`.
+
+---
+
+## 4) ASCII Diagram (for environments without Mermaid)
+
+```
+[ G2S CAN Airspeed Sensor ]
+            |
+            |  CAN frames (RawCAN, Protocol=Scripting2)
+            v
+[ HAL: AP_HAL::CANIface ]
+            |
+            v
+[ AP_CANManager (routing) ]
+            |
+            v
+[ CANSensor / MultiCAN ]
+            |
+            v
+[ AP_Airspeed_G2S backend ]
+   - handle_frame()
+   - parse payload
+   - last_update_ms
+   - healthy/timeout
+            |
+            v
+[ AP_Airspeed frontend ]
+   - calibration/filters
+   - state update
+            |
+            v
+[ EKF / TECS / Logs / GCS ]
+```
+
+---
+
+## 5) What each block means (short)
+
+- **Sensor**: publishes CAN frames at ~50 Hz.
+- **HAL (CANIface)**: board/OS-specific CAN driver interface that receives frames.
+- **AP_CANManager**: registers CAN drivers and routes frames to the correct protocol consumers.
+- **MultiCAN / CANSensor**: helper layer that distributes frames to callbacks (backends) registered for that protocol.
+- **AP_Airspeed_G2S**: parses frames, caches values, enforces health/timeout/failsafe.
+- **AP_Airspeed frontend**: consumes backend values and provides airspeed to the rest of the flight stack.
